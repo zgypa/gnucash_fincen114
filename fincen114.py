@@ -4,6 +4,8 @@ import sys
 import argparse
 from datetime import datetime, date, timedelta
 import locale
+from decimal import Decimal
+
 import piecash
 import prettytable
 
@@ -19,9 +21,10 @@ PARENT_OF_BANK_ACCOUNTS = ""
 THIS_YEAR = datetime.now().date().year
 LAST_YEAR = THIS_YEAR - 1
 
-aggregate_max_balance_usd = 0
+aggregate_high_balance_usd = 0
+conversion_rate = None
+book = None
 
-book = piecash.open_book(GNUCASH_DB_FILE, readonly=True, open_if_lock=True)
 
 def opening_balance(account):
     return account.get_balance(at_date=date(LAST_YEAR, 1, 1))
@@ -32,10 +35,10 @@ def daterange(start_date, end_date):
         yield start_date + timedelta(n+1)
 
 
-def get_max_balance(account, year=LAST_YEAR):
+def get_high_balance(account, year=LAST_YEAR):
     """Get the highest balance for a given account in a given year.
 
-    Uses piecash.Account.get_balance(at_date=). This method is about 5x slower than ``get_max_balance1()``, because the get_balance functions recalculates the entire balance for each run. But it is slightly more accurate, because it does not take into account in-accurate daily oscillations. 
+    Uses piecash.Account.get_balance(at_date=). This method is about 5x slower than ``get_high_balance1()``, because the get_balance functions recalculates the entire balance for each run. But it is slightly more accurate, because it does not take into account in-accurate daily oscillations. 
 
     The resolution of transactions is 1 day. Any movement within that day is therefore random and should not be taken into account.
 
@@ -50,22 +53,22 @@ def get_max_balance(account, year=LAST_YEAR):
     :return: A tuple of maximum balance and maximum data
     :rtype: tuple
     """
-    max_balance = 0
-    max_balance_day = date(LAST_YEAR, 1, 1)
+    high_balance = 0
+    high_balance_day = date(LAST_YEAR, 1, 1)
     print(f'Processing {account.name} {account.type}: ', end='')
     for sp in account.splits:
         day = sp.transaction.post_date
         balance = account.get_balance(at_date=day)
         # print(f'{day} {locale.currency(sp.value, symbol=False)}\t{locale.currency(balance, symbol=False)}')
         if day > date(year-1, 12, 31) and day < date(year+1, 1, 1):
-            if balance > max_balance:
-                max_balance = balance
-                max_balance_day = day
-    print(max_balance)
-    return max_balance, max_balance_day
+            if balance > high_balance:
+                high_balance = balance
+                high_balance_day = day
+    print(high_balance)
+    return high_balance, high_balance_day
 
 
-def get_max_balance1(account, year=LAST_YEAR):
+def get_high_balance1(account, year=LAST_YEAR):
     """Get the highest balance for a given account in a given year.
 
     Using the underlying SQLAlchemy session has been used, because the
@@ -80,7 +83,7 @@ def get_max_balance1(account, year=LAST_YEAR):
 
     .. warning::
         Great thought, however i don't think this is the best approach to go.
-        See notes in ``get_max_balance()`` above. The point is that the imported
+        See notes in ``get_high_balance()`` above. The point is that the imported
         transaction's precision/resolution is only one day. So i must consider
         anything that happens within one day as atomic, and any intra-day
         balances as non-sensical, because we have no way of knowing what the
@@ -100,8 +103,8 @@ def get_max_balance1(account, year=LAST_YEAR):
     :return: A tuple of maximum balance and maximum data
     :rtype: tuple
     """
-    max_balance = 0
-    max_balance_day = date(LAST_YEAR, 1, 1)
+    high_balance = 0
+    high_balance_day = date(LAST_YEAR, 1, 1)
     balance = 0
     print(f'Processing {account.name}: ', end='')
     session = book.session
@@ -113,64 +116,84 @@ def get_max_balance1(account, year=LAST_YEAR):
         day = sp.transaction.post_date
         # print(f'{day} {locale.currency(sp.value, symbol=False)}\t{locale.currency(balance, symbol=False)}')
         if day > date(year-1, 12, 31) and day < date(year+1, 1, 1):
-            if balance > max_balance:
-                max_balance = balance
-                max_balance_day = day
+            if balance > high_balance:
+                high_balance = balance
+                high_balance_day = day
 
-    print(max_balance)
-    return max_balance, max_balance_day
-
-
-def fincen_subaccounts(accounts):
-    for acc in accounts.children:
-        if acc.type == 'BANK' and acc.placeholder == 0:
-            max_balance, max_balance_day = get_max_balance(account=acc)
-            if max_balance > 0:
-                fincen_table.add_row([
-                    acc.name,
-                    locale.currency(max_balance, grouping=True, symbol=False),
-                    acc.commodity.mnemonic,
-                    max_balance_day
-                ])
-        else:
-            fincen_subaccounts(acc)
+    print(high_balance)
+    return high_balance, high_balance_day
 
 
-def fincen114():
+def add_table_row(account):
+    global aggregate_high_balance_usd
+    high_balance, high_balance_day = get_high_balance(account=account)
+    if conversion_rate is None:
+        high_balance_usd = "N/A"
+    else:
+        high_balance_usd = high_balance / conversion_rate
+        aggregate_high_balance_usd += high_balance_usd
+        high_balance_usd = locale.currency(high_balance_usd, grouping=True)
+    if high_balance > 0:
+        fincen_table.add_row([
+            account.name,
+            locale.currency(high_balance, grouping=True, symbol=False),
+            account.commodity.mnemonic,
+            high_balance_usd,
+            high_balance_day
+        ])
+
+
+def fincen114(args):
     """Calculate maximum amount of EUR accounts for FINCEN114 FBAR reporting.
 
     """
-    global fincen_table
+    global fincen_table, book, conversion_rate
+    if args.year:
+        global THIS_YEAR, LAST_YEAR
+        LAST_YEAR = args.year
+        THIS_YEAR = LAST_YEAR + 1
+    if args.conversion:
+        conversion_rate = Decimal(args.conversion)
 
-    eur_accounts = book.accounts(name=PARENT_OF_BANK_ACCOUNTS)
+    book = piecash.open_book(args.dbfile, readonly=True, open_if_lock=True)
+
+    accounts = [account for account in book.accounts if (
+        "#fbar" in account.description)]
     fincen_table = prettytable.PrettyTable()
-    fincen_table.field_names = ["Account", "Max Balance", "CUR", "Date"]
+    fincen_table.field_names = ["Account", "Max Balance", "CUR", "USD", "Date"]
     fincen_table.align["Account"] = "l"
     fincen_table.align["Max Balance"] = "r"
     fincen_table.align["CUR"] = "l"
-    fincen_subaccounts(eur_accounts)
+    fincen_table.align["USD"] = "r"
+    for account in accounts:
+        add_table_row(account)
 
-    if aggregate_max_balance_usd > 10000: 
+    if aggregate_high_balance_usd > 10000:
         print(fincen_table)
     else:
         # Only required to file FBAR if aggregate of all high balances is over $10k.
-        print(f"Maximum aggregate high balance is only {locale.currency(aggregate_max_balance_usd, grouping=True)} which is less than $10k. No need to file FBAR for year {THIS_YEAR-1}")
+        print(
+            f"Maximum aggregate high balance is only {locale.currency(aggregate_high_balance_usd, grouping=True)} which is less than $10k. No need to file FBAR for year {THIS_YEAR-1}")
+
 
 def main():
     fincen114()
 
+
 def cmdline_args():
-        # Make parser object
+    # Make parser object
     p = argparse.ArgumentParser(description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    
-    p.add_argument("gnucash sqlite file",
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+
+    p.add_argument("dbfile",
                    help="GnuCash DB SQLite file")
-    p.add_argument("-y","--year", type=int,
+    p.add_argument("-y", "--year", type=int,
                    help="Year to calculate")
-    p.add_argument("-v", "--verbosity", type=int, choices=[0,1,2], default=0,
-                   help="increase output verbosity (default: %(default)s)")
-                   
+    p.add_argument("-c", "--conversion", type=float,
+                   help="Price of 1USD in foreign currency.")
+    p.add_argument("--version", action="version",
+                   version=f"gnucash-fincen114 v{VERSION}")
+    p.add_argument("-v","--verbose", action="store_true", help="Print Exceptions.")
     return(p.parse_args())
 
 
@@ -178,15 +201,13 @@ def cmdline_args():
 #
 # "Hello" 123 --enable
 if __name__ == '__main__':
-    
-    if sys.version_info<(3,5,0):
+
+    if sys.version_info < (3, 5, 0):
         sys.stderr.write("You need python 3.5 or later to run this script\n")
         sys.exit(1)
-        
+
     try:
         args = cmdline_args()
-        print(args)
-    except:
-        print('Try $python <script_name> "Hello" 123 --enable')
-
-    print()
+        fincen114(args)
+    except Exception as e:
+        print(e + 'Try $python ./fincen114.py "file.gnucash" ')
