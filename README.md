@@ -26,4 +26,5 @@ It is necessary to configure things manually inside the Python file at this stag
 ## Contributing
 
 - Look at issues in the [Issues section of the GitHub repo](https://github.com/zgypa/gnucash_fincen114/issues).
+- Make all pull requests off of the ``develop`` branch.
 - Please commit pull request for changes.
