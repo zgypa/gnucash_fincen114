@@ -5,6 +5,8 @@ import locale
 import piecash
 import prettytable
 
+VERSION = "0.1.0"
+
 locale.setlocale(locale.LC_ALL, '')
 GNUCASH_DB_FILE = "master_folio/masterfolio.gnucash"
 
