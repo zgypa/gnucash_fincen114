@@ -8,12 +8,14 @@ import prettytable
 locale.setlocale(locale.LC_ALL, '')
 GNUCASH_DB_FILE = "master_folio/masterfolio.gnucash"
 
-# The GUID for "40 Bank Accounts EUR"
-BANK_ACCOUNTS_EUR = "81545e89426f7f9122e86340a2528a8d"
+# The name of the account parent of the accounts to traverse. Must be the exact
+# bank account name.
+PARENT_OF_BANK_ACCOUNTS = ""
 
 THIS_YEAR = datetime.now().date().year
 LAST_YEAR = THIS_YEAR - 1
 
+book = piecash.open_book(GNUCASH_DB_FILE, readonly=True, open_if_lock=True)
 
 def opening_balance(account):
     return account.get_balance(at_date=date(LAST_YEAR, 1, 1))
@@ -96,6 +98,7 @@ def get_max_balance1(account, year=LAST_YEAR):
     max_balance_day = date(LAST_YEAR, 1, 1)
     balance = 0
     print(f'Processing {account.name}: ', end='')
+    session = book.session
     for sp in session.query(piecash.Split).\
             filter(piecash.Split.account_guid == account.guid).\
             join(piecash.Transaction).\
@@ -132,10 +135,8 @@ def fincen114():
 
     """
     global fincen_table
-    book = piecash.open_book(GNUCASH_DB_FILE, readonly=True, open_if_lock=True)
-    session = book.session
 
-    eur_accounts = book.accounts(guid=BANK_ACCOUNTS_EUR)
+    eur_accounts = book.accounts(name=PARENT_OF_BANK_ACCOUNTS)
     fincen_table = prettytable.PrettyTable()
     fincen_table.field_names = ["Account", "Max Balance", "CUR", "Date"]
     fincen_table.align["Account"] = "l"
