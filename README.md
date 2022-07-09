@@ -13,7 +13,7 @@ Something like::
 
 3. If you are not using SQLite as file format, save as your GnuCash database in SQLite format.
 
-Currently, no option for changing database typ
+Currently, no option for changing database type. In order to change, you need to play with the script.
 
 ## Configurations
 
