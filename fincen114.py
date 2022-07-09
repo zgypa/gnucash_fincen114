@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import sys
+import argparse
 from datetime import datetime, date, timedelta
 import locale
 import piecash
@@ -16,6 +18,8 @@ PARENT_OF_BANK_ACCOUNTS = ""
 
 THIS_YEAR = datetime.now().date().year
 LAST_YEAR = THIS_YEAR - 1
+
+aggregate_max_balance_usd = 0
 
 book = piecash.open_book(GNUCASH_DB_FILE, readonly=True, open_if_lock=True)
 
@@ -146,10 +150,43 @@ def fincen114():
     fincen_table.align["CUR"] = "l"
     fincen_subaccounts(eur_accounts)
 
-    print(fincen_table)
+    if aggregate_max_balance_usd > 10000: 
+        print(fincen_table)
+    else:
+        # Only required to file FBAR if aggregate of all high balances is over $10k.
+        print(f"Maximum aggregate high balance is only {locale.currency(aggregate_max_balance_usd, grouping=True)} which is less than $10k. No need to file FBAR for year {THIS_YEAR-1}")
 
 def main():
     fincen114()
 
-if __name__ == "__main__":
-    main()
+def cmdline_args():
+        # Make parser object
+    p = argparse.ArgumentParser(description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    
+    p.add_argument("gnucash sqlite file",
+                   help="GnuCash DB SQLite file")
+    p.add_argument("-y","--year", type=int,
+                   help="Year to calculate")
+    p.add_argument("-v", "--verbosity", type=int, choices=[0,1,2], default=0,
+                   help="increase output verbosity (default: %(default)s)")
+                   
+    return(p.parse_args())
+
+
+# Try running with these args
+#
+# "Hello" 123 --enable
+if __name__ == '__main__':
+    
+    if sys.version_info<(3,5,0):
+        sys.stderr.write("You need python 3.5 or later to run this script\n")
+        sys.exit(1)
+        
+    try:
+        args = cmdline_args()
+        print(args)
+    except:
+        print('Try $python <script_name> "Hello" 123 --enable')
+
+    print()
