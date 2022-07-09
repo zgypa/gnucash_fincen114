@@ -17,25 +17,18 @@ GNUCASH_DB_FILE = "master_folio/masterfolio.gnucash"
 # The name of the account parent of the accounts to traverse. Must be the exact
 # bank account name.
 PARENT_OF_BANK_ACCOUNTS = ""
-
-THIS_YEAR = datetime.now().date().year
-LAST_YEAR = THIS_YEAR - 1
+LAST_YEAR = datetime.now().year
 
 aggregate_high_balance_usd = 0
-conversion_rate = None
 book = None
-
-
-def opening_balance(account):
-    return account.get_balance(at_date=date(LAST_YEAR, 1, 1))
-
+args = None
 
 def daterange(start_date, end_date):
     for n in range(int((end_date - start_date).days)):
         yield start_date + timedelta(n+1)
 
 
-def get_high_balance(account, year=LAST_YEAR):
+def get_high_balance(account):
     """Get the highest balance for a given account in a given year.
 
     Uses piecash.Account.get_balance(at_date=). This method is about 5x slower than ``get_high_balance1()``, because the get_balance functions recalculates the entire balance for each run. But it is slightly more accurate, because it does not take into account in-accurate daily oscillations. 
@@ -53,8 +46,9 @@ def get_high_balance(account, year=LAST_YEAR):
     :return: A tuple of maximum balance and maximum data
     :rtype: tuple
     """
+    year = args.year
     high_balance = 0
-    high_balance_day = date(LAST_YEAR, 1, 1)
+    high_balance_day = date(year, 1, 1)
     print(f'Processing {account.name} {account.type}: ', end='')
     for sp in account.splits:
         day = sp.transaction.post_date
@@ -68,7 +62,7 @@ def get_high_balance(account, year=LAST_YEAR):
     return high_balance, high_balance_day
 
 
-def get_high_balance1(account, year=LAST_YEAR):
+def get_high_balance1(account):
     """Get the highest balance for a given account in a given year.
 
     Using the underlying SQLAlchemy session has been used, because the
@@ -103,8 +97,9 @@ def get_high_balance1(account, year=LAST_YEAR):
     :return: A tuple of maximum balance and maximum data
     :rtype: tuple
     """
+    year = args.year
     high_balance = 0
-    high_balance_day = date(LAST_YEAR, 1, 1)
+    high_balance_day = date(year, 1, 1)
     balance = 0
     print(f'Processing {account.name}: ', end='')
     session = book.session
@@ -127,10 +122,10 @@ def get_high_balance1(account, year=LAST_YEAR):
 def add_table_row(account):
     global aggregate_high_balance_usd
     high_balance, high_balance_day = get_high_balance(account=account)
-    if conversion_rate is None:
+    if args.conversion is None:
         high_balance_usd = "N/A"
     else:
-        high_balance_usd = high_balance / conversion_rate
+        high_balance_usd = high_balance / Decimal(args.conversion)
         aggregate_high_balance_usd += high_balance_usd
         high_balance_usd = locale.currency(high_balance_usd, grouping=True)
     if high_balance > 0:
@@ -143,17 +138,12 @@ def add_table_row(account):
         ])
 
 
-def fincen114(args):
+def fincen114(sysargs):
     """Calculate maximum amount of EUR accounts for FINCEN114 FBAR reporting.
 
     """
-    global fincen_table, book, conversion_rate
-    if args.year:
-        global THIS_YEAR, LAST_YEAR
-        LAST_YEAR = args.year
-        THIS_YEAR = LAST_YEAR + 1
-    if args.conversion:
-        conversion_rate = Decimal(args.conversion)
+    global fincen_table, book, args
+    args = sysargs
 
     book = piecash.open_book(args.dbfile, readonly=True, open_if_lock=True)
 
@@ -168,12 +158,12 @@ def fincen114(args):
     for account in accounts:
         add_table_row(account)
 
-    if aggregate_high_balance_usd > 10000:
+    if args.conversion is None or aggregate_high_balance_usd > 10000:
         print(fincen_table)
     else:
         # Only required to file FBAR if aggregate of all high balances is over $10k.
         print(
-            f"Maximum aggregate high balance is only {locale.currency(aggregate_high_balance_usd, grouping=True)} which is less than $10k. No need to file FBAR for year {THIS_YEAR-1}")
+            f"Maximum aggregate high balance is only {locale.currency(aggregate_high_balance_usd, grouping=True)} which is less than $10k. No need to file FBAR for year {args.year}")
 
 
 def main():
@@ -187,7 +177,7 @@ def cmdline_args():
 
     p.add_argument("dbfile",
                    help="GnuCash DB SQLite file")
-    p.add_argument("-y", "--year", type=int,
+    p.add_argument("-y", "--year", type=int, default=LAST_YEAR,
                    help="Year to calculate")
     p.add_argument("-c", "--conversion", type=float,
                    help="Price of 1USD in foreign currency.")
