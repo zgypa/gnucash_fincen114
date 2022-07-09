@@ -17,11 +17,15 @@ Currently, no option for changing database typ
 
 ## Configurations
 
-It is necessary to configure things manually inside the Python file at this stage.
+1. In GnuCash, tag each account you would like included in the FBAR report with the word ``#fbar``. It doesn't matter where you put it, as long as it is in the description somewhere.
+2. Not required: Get the Exchange rate as of December 31 of the year you are interested in. Needed to convert into USD, which is required for FBAR filing.
+3. Pick the year. If you do not pick one, last calendar year will be used.
 
-- ``GNUCASH_DB_FILE`` is the SQLite file name of your GnuCash database.
-- ``BANK_ACCOUNTS`` is the GUID of the bank accounts to use. 
-- ``THIS_YEAR`` is this calendar year. The report will be performed automatically from last year's Jan 1 to last year's Dec 31. So change THIS_YEAR one year greate to whatever year you need to get FBAR values for.
+Then run::
+
+    python3 ./fincen114.py myportfolio.gnucash --conversion <conversion_rate>
+
+
 
 ## Contributing
 
