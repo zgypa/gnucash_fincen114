@@ -1,6 +1,6 @@
 # FINCEN 114 FBAR with GnuCash
 
-A simple Python script based on [Piecash](https://github.com/sdementen/piecash).
+A simple Python script based on [Piecash](https://github.com/sdementen/piecash) in order to calculate high balances of accounts, with the primary intent of filing the FINCEN 114 - FBAR report.
 
 ## Preparation
 
@@ -23,3 +23,7 @@ It is necessary to configure things manually inside the Python file at this stag
 - ``BANK_ACCOUNTS`` is the GUID of the bank accounts to use. 
 - ``THIS_YEAR`` is this calendar year. The report will be performed automatically from last year's Jan 1 to last year's Dec 31. So change THIS_YEAR one year greate to whatever year you need to get FBAR values for.
 
+## Contributing
+
+- Please commit pull request for changes.
+- Look at issues in the 
